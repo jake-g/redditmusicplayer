@@ -1,5 +1,38 @@
- 
 ## Changelog
+
+### 0.5.14 - 17 July 2015
+
+* Sorting subreddits by subscribers instead, adding more options in the future
+* Showing the title and description in the subreddit browser on hover
+
+### 0.5.13 - 11 July 2015
+
+* Mobile UI is now cleaner; hiding thumbnails on very small phones and tiny tweaks
+* Shuffle button shuffles your current playlist once per click
+* Getting more music is now more performant
+
+### 0.5.12 - 10 July 2015
+
+* Volume control draggable
+* First-class Vimeo support; custom color, play/pause/ended events, loaded progress, seeking, playing progress, skips to the next song when done, volume control
+* Larger, visual player for soundcloud and fixes
+
+### 0.5.11 - 9 July 2015
+
+* Hover on image links in the comments to preview them
+
+### 0.5.10 - 9 July 2015
+
+* Sharing subreddit playlists via url or to Twitter, Facebook, Gplus, /r/musicplayer
+
+### 0.5.9 - 9 July 2015
+
+* Colors per type: youtube, soundcloud, vimeo, bandcamp, self/link
+* Cleaner UI for metadata
+
+### 0.5.8 - 8 July 2015
+
+* Hooks for API
 
 ### 0.5.7 - 1 July 2015
 

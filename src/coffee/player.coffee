@@ -47,9 +47,13 @@ YoutubePlayer = MusicPlayer.extend
 		@set song.attributes
 		@getTrack()
 		@player.loadVideoById @track.id
-	playPause: () ->
+	isPlaying: ->
 		if @player and @player.getPlayerState? and @player.pauseVideo? and @player.playVideo?
-			if @player.getPlayerState() is 1 then @player.pauseVideo() else @player.playVideo()
+			return @player.getPlayerState() is 1
+		else
+			return false
+	playPause: () ->
+		if @isPlaying() then @player.pauseVideo() else @player.playVideo()
 	volume: (value) ->
 		@player.setVolume(value * 100)
 	seekTo: (percentage, seekAhead) ->
@@ -81,7 +85,7 @@ YoutubePlayer = MusicPlayer.extend
 		@getTrack()
 		@init()
 		@listenTo RMP.dispatcher, "player:playing", @initProgress
-		
+
 		console.log "YoutubePlayer :: ", @track if FLAG_DEBUG
 		console.log "Player :: Youtube" if FLAG_DEBUG
 
@@ -103,6 +107,7 @@ SoundcloudPlayer = MusicPlayer.extend
 				RMP.dispatcher.trigger "progress:duration", duration / 1000 # secs
 			@playerState = ev
 			RMP.dispatcher.trigger "player:#{ev}", @
+	isPlaying: -> @playerState is "playing"
 	playPause: () ->
 		@player.toggle()
 	volume: (value) ->
@@ -115,11 +120,12 @@ SoundcloudPlayer = MusicPlayer.extend
 		@init () =>
 			@player.load @track.sc.uri,
 				auto_play: true
+				visual: true
 	setUp: (callback) ->
 		if not @player?
 			console.log "setting up iframe" if FLAG_DEBUG
 			if $("#soundcloud").length is 0
-				iframe = $("<iframe id='soundcloud' src='//w.soundcloud.com/player/?visual=true&url=#{@track.sc.uri}'>")
+				iframe = $ "<iframe id='soundcloud' width='100%' height='450' scrolling='no' frameborder='no' src='//w.soundcloud.com/player/?url=#{@track.sc.uri}&amp;auto_play=true&amp;hide_related=true&amp;show_comments=true&amp;show_user=true&amp;show_reposts=false&amp;visual=true'></iframe>"
 					.appendTo($("#player"))
 			@player = SC.Widget "soundcloud"
 			_.each @events(), (listener, ev) =>
@@ -131,8 +137,13 @@ SoundcloudPlayer = MusicPlayer.extend
 		@off()
 		@trigger "destroy"
 	init: (callback) ->
-		@track = @attributes.media.oembed
-		url = decodeURIComponent(decodeURIComponent(@track.html))
+		if @get("media")?
+			@track = @attributes.media.oembed
+			url = decodeURIComponent(decodeURIComponent(@track.html))
+		else
+			console.error "SoundcloudPlayer :: Not Streamable"
+			RMP.dispatcher.trigger "controls:forward"
+			return
 
 		user_id = url.match(/\/users\/(\d+)/)
 		@track.type = "users" if user_id?
@@ -146,7 +157,7 @@ SoundcloudPlayer = MusicPlayer.extend
 		@track.type = "playlists" if track_id?
 		@track.id = track_id[1] if track_id?
 
-		console.log @track
+		console.log @track if FLAG_DEBUG
 		$.ajax
 			url: "#{API.Soundcloud.base}/#{@track.type}/#{@track.id}.json?callback=?"
 			jsonp: "callback"
@@ -155,17 +166,24 @@ SoundcloudPlayer = MusicPlayer.extend
 				client_id: API.Soundcloud.key
 			success: (sctrack) =>
 				console.log sctrack if FLAG_DEBUG
-				if not sctrack.streamable then throw new Error("Not Streamable")
+				if not sctrack.streamable
+					console.error "SoundcloudPlayer :: Not Streamable"
+					RMP.dispatcher.trigger "controls:forward"
 				@track.sc = sctrack
 
 				RMP.progressbar.enableSoundcloud @track.sc.waveform_url
 				@setUp callback
+			error: (xhr, status, err) =>
+				console.error "SoundcloudPlayer :: Error Loading :: ", status, err
+				RMP.dispatcher.trigger "controls:forward"
 	initialize: () ->
 		@$el = $("#player") if not @$el?
 		@init () =>
-			@player.load @track.sc.uri,
+			@player.load "#{@track.sc.uri}",
 				auto_play: true
-	
+				visual: true
+
+
 MP3Player = MusicPlayer.extend
 	type: "mp3"
 	events: () ->
@@ -206,8 +224,9 @@ MP3Player = MusicPlayer.extend
 		@set "streaming_url", @get "url"
 		@clean(true)
 		@init()
+	isPlaying: -> @playerState is "playing"
 	playPause: () ->
-		if @playerState is "playing" then @player.pause() else @player.play()
+		if @isPlaying() then @player.pause() else @player.play()
 	volume: (value) ->
 		@player.volume = value
 	seekTo: (percentage, seekAhead) ->
@@ -288,37 +307,16 @@ BandcampPlayer = MP3Player.extend
 
 VimeoPlayer = MusicPlayer.extend
 	type: "vimeo"
-	events: () ->
-		# "progress": @progress_play()
-		# "play": @event_trigger("playing")
-		# "playing": @event_trigger("playing")
-		# "pause": @event_trigger("paused")
-		# "ended": @event_trigger("ended")
-		# "durationchange": @setDuration()
-	setDuration: () ->
-		# return () =>
-		# 	RMP.dispatcher.trigger "progress:duration", @player.duration # secs
-	progress_play: (data) ->
-		# return () =>
-		# 	RMP.dispatcher.trigger "progress:loaded", @player.buffered.end(0)/@player.duration # secs
-		# 	RMP.dispatcher.trigger "progress:current", @player.currentTime # secs
 	playerState: "ended"
-	event_trigger: (ev) ->
-		# return (data) =>
-		# 	@playerState = ev
-		# 	RMP.dispatcher.trigger "player:#{ev}", @
+	duration: 60
+	postMessage: (options) ->
+		@player.postMessage JSON.stringify(options), "*"
 	init: () ->
 		console.log "VimeoPlayer :: Making Player" if FLAG_DEBUG
-		player = $("<iframe src='http://player.vimeo.com/video/#{@track.id}?api=1&autoplay=1' webkitallowfullscreen mozallowfullscreen allowfullscreen frameborder='0'>")
-		@$el.append player
-		
-		@player = player[0].contentWindow
-		@player.postMessage({
-			"method": "play"
-		}, "*")
-
-		# _.each @events(), (listener, ev) =>
-		# 	$(@player).bind ev, listener
+		@playerEl = $("<iframe src='//player.vimeo.com/video/#{@track.id}?api=1&autoplay=1&player_id=vimeoplayer' webkitallowfullscreen mozallowfullscreen allowfullscreen frameborder='0'>")
+		@$el.append @playerEl
+		@player = @playerEl[0].contentWindow
+		@postMessage method: "play"
 	clean: (justTheElement) ->
 		$("#player iframe").remove()
 		@$el.html ""
@@ -335,13 +333,70 @@ VimeoPlayer = MusicPlayer.extend
 
 		@clean(true)
 		@init()
+	isPlaying: -> @playerState is "playing"
 	playPause: () ->
-		if @playerState is "playing"
-			@player.postMessage({method: "pause"}, "*")
+		if @isPlaying()
+			@postMessage method: "pause"
 		else
-			@player.postMessage({method: "play"}, "*")
-	seekTo: (percentage, seekAhead) ->
-		# @player.currentTime = percentage * @player.duration
+			@postMessage method: "play"
+	seekTo: (percentage) ->
+		@postMessage
+			method: "seekTo"
+			value: percentage * @duration
+	onReady: () ->
+		@postMessage
+			method: "setColor"
+			value: "FDC00F"
+		@postMessage
+			method: "addEventListener"
+			value: "pause"
+		@postMessage
+			method: "addEventListener"
+			value: "finish"
+		@postMessage
+			method: "addEventListener"
+			value: "playProgress"
+		@postMessage
+			method: "addEventListener"
+			value: "loadProgress"
+		@postMessage
+			method: "addEventListener"
+			value: "play"
+		@postMessage
+			method: "getVideoHeight"
+		@postMessage
+			method: "getVideoWidth"
+		@volume RMP.volumecontrol.model.get("volume")
+	volume: (value) ->
+		@postMessage
+			method: "setVolume"
+			value: value
+	onPlayProgress: (data) ->
+		@duration = data.duration
+		RMP.dispatcher.trigger "progress:duration", data.duration # secs
+		RMP.dispatcher.trigger "progress:current", data.seconds # secs
+	onPause: () ->
+		@playerState = "paused"
+		RMP.dispatcher.trigger "player:paused", @
+	onFinish: () ->
+		@playerState = "ended"
+		RMP.dispatcher.trigger "player:ended", @
+	onPlay: () ->
+		@playerState = "playing"
+		RMP.dispatcher.trigger "player:playing", @
+	onLoadProgress: (data) ->
+		RMP.dispatcher.trigger "progress:loaded", data.percent
+	onVideoHeight: (value) ->
+		@height = value
+		@setHeight()
+	onVideoWidth: (value) ->
+		@width = value
+		@setHeight()
+	setHeight: () ->
+		if @height? and @width?
+			externalWidth = $(".content.song").width()
+			ratio = @height / @width
+			@playerEl.height ratio * externalWidth
 	initialize: () ->
 		@$el = $("#player") if not @$el?
 		@$el.html ""
@@ -351,7 +406,16 @@ VimeoPlayer = MusicPlayer.extend
 
 		video_id = url.match(/\/video\/(\d+)/)
 		@track.id = video_id[1] if video_id?
-		
+
+		@listenTo RMP.dispatcher, "vimeo:ready", @onReady
+		@listenTo RMP.dispatcher, "vimeo:playProgress", @onPlayProgress
+		@listenTo RMP.dispatcher, "vimeo:pause", @onPause
+		@listenTo RMP.dispatcher, "vimeo:finish", @onFinish
+		@listenTo RMP.dispatcher, "vimeo:play", @onPlay
+		@listenTo RMP.dispatcher, "vimeo:loadProgress", @onLoadProgress
+		@listenTo RMP.dispatcher, "vimeo:getVideoWidth", @onVideoWidth
+		@listenTo RMP.dispatcher, "vimeo:getVideoHeight", @onVideoHeight
+
 		@init()
 
 
@@ -396,8 +460,8 @@ RMP.player = new PlayerController
 
 # Youtube functions
 RMP.dispatcher.once "app:main", () ->
-	$("<script src='https://www.youtube.com/iframe_api' />").appendTo $(".scripts")
-	$("<script src='https://w.soundcloud.com/player/api.js' />").appendTo $(".scripts")
+	$("<script src='//www.youtube.com/iframe_api' />").appendTo $(".scripts")
+	$("<script src='//w.soundcloud.com/player/api.js' />").appendTo $(".scripts")
 
 onYouTubeIframeAPIReady = () ->
 	console.log "Youtube :: iFramed" if FLAG_DEBUG

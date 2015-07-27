@@ -21,4 +21,5 @@ node_modules
 server/config/reddit.coffee
 server/config/keys
 src/coffee/config.coffee
+
 *.DS_Store
